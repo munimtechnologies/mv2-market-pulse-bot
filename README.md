@@ -17,10 +17,14 @@ Its forecasts are public research on a forecasting platform. They are not invest
   [forecasting-tools](https://github.com/Metaculus/forecasting-tools) (MIT). For each question it does a news research
   step, then makes 5 independent forecasts and combines them. The forecast is posted with its reasoning as a comment.
 - **Market data.** The research step also gets recent levels and base rates from official free sources when a
-  question mentions them (`market_data.py`, `sec_filings.py`):
+  question mentions them (`market_data.py`, `sec_filings.py`, `vix_window.py`):
   - VIX: [Cboe's VIX history](https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv). It gives
     the last close, the recent highs, the 1-year range, and the distribution of the highest intraday high over the
-    next 10 trading days, scaled to today's close.
+    question's horizon, scaled to today's close. A VIX question usually asks about a two-week window; when the window
+    dates can be read from the question, the horizon is the number of trading days to the end of that window,
+    otherwise it falls back to 10 trading days. Market Pulse asks VIX questions as a group with one subquestion per
+    two-week period. Each subquestion's period label (e.g. "Oct 19 – Oct 30") is read first, so the shared text that
+    lists every period does not pick the wrong one.
   - Treasury yields: the
     [U.S. Treasury par yield curve](https://home.treasury.gov/resource-center/data-chart-center/interest-rates). It
     gives 3M/2Y/10Y/30Y with 5- and 20-day changes, and the distribution of 10-day moves in the 10Y.
@@ -69,7 +73,7 @@ Its forecasts are public research on a forecasting platform. They are not invest
 pip install -r requirements.txt
 cp .env.example .env   # fill it in; never commit it
 python main.py --mode test --no-publish
-python -m unittest -v test_mv2_config test_market_data test_sec_filings
+python -m unittest -v test_mv2_config test_market_data test_sec_filings test_vix_window
 ```
 
 ## Rules it follows

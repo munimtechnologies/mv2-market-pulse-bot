@@ -55,6 +55,26 @@ class VixTest(unittest.TestCase):
         self.assertIn("close 15.00", text)
         self.assertIn("16.50 / 16.50 / 16.50", text)
         self.assertIn("p50 16.50", text)
+        self.assertIn("next 10 trading days", text)
+
+    def test_window_sets_horizon_and_labels(self):
+        rows = md.parse_vix_csv(vix_csv(100))  # last row 2026-04-10 (Friday)
+        text = md.summarize_vix(rows, window=(date(2026, 4, 20), date(2026, 5, 1)), today=date(2026, 4, 10))
+        self.assertIn("Question window 2026-04-20 to 2026-05-01", text)
+        self.assertIn("through the end of the question window", text)
+        self.assertIn("close 15.00", text)  # the level lines are unchanged
+
+    def test_past_window_falls_back_to_default(self):
+        rows = md.parse_vix_csv(vix_csv(100))
+        text = md.summarize_vix(rows, window=(date(2026, 1, 5), date(2026, 1, 9)), today=date(2026, 4, 10))
+        self.assertNotIn("Question window", text)
+        self.assertIn("next 10 trading days", text)
+
+    def test_context_reads_window_from_group_label(self):
+        # research_text puts a group subquestion's period label first; vix_context reads the window from it.
+        with mock.patch.object(md, "_fetch", return_value=vix_csv(100)):
+            text = md.vix_context("Apr 20 – May 1\nVIX biweekly maximum?", today=date(2026, 4, 10))
+        self.assertIn("Question window 2026-04-20 to 2026-05-01", text)
 
 
 class TreasuryTest(unittest.TestCase):

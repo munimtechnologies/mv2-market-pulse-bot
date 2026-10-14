@@ -65,8 +65,14 @@ def market_pulse_id(env: Mapping[str, str] | None = None, client_cls: Any = None
 
 
 def research_text(question: Any) -> str:
-    """The question's own words (title, background, criteria, fine print) used to pick market data."""
-    parts = (getattr(question, name, None) for name in ("question_text", "background_info", "resolution_criteria", "fine_print"))
+    """The question's own words (period label, title, background, criteria, fine print) used to pick market data.
+
+    A group subquestion (e.g. one two-week period of a VIX question) keeps its period only in forecasting-tools'
+    `group_question_option` (the Metaculus label); the description it shares with its siblings may list every
+    period. The label goes first so the window reader finds this subquestion's own period.
+    """
+    names = ("group_question_option", "question_text", "background_info", "resolution_criteria", "fine_print")
+    parts = (getattr(question, name, None) for name in names)
     return "\n".join(p for p in parts if isinstance(p, str) and p.strip())
 
 

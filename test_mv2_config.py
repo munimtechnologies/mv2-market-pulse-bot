@@ -82,6 +82,22 @@ class ResearchTextTest(unittest.TestCase):
         q.fine_print = None
         self.assertEqual(cfg.research_text(q), "VIX peak?\nCboe close")
 
+    def test_group_period_label_comes_first(self):
+        q = Q()
+        q.group_question_option = "Oct 19 – Oct 30"
+        q.question_text = "VIX biweekly maximum in Q4 2026?"
+        q.background_info = "Periods: Oct 5–16, Oct 19–30"
+        self.assertEqual(
+            cfg.research_text(q),
+            "Oct 19 – Oct 30\nVIX biweekly maximum in Q4 2026?\nPeriods: Oct 5–16, Oct 19–30",
+        )
+
+    def test_blank_label_is_skipped(self):
+        q = Q()
+        q.group_question_option = None
+        q.question_text = "VIX peak?"
+        self.assertEqual(cfg.research_text(q), "VIX peak?")
+
 
 class ScoringTimeTest(unittest.TestCase):
     def test_api_spot_scoring_time_wins(self):

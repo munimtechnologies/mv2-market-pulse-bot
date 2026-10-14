@@ -18,10 +18,11 @@ import urllib.request
 from datetime import date, datetime
 
 import sec_filings
+import vix_window
 
 logger = logging.getLogger(__name__)
 
-USER_AGENT = "mv2-forecast-bot/0.2 (MV2 of Munim, Inc.; munimversion2@gmail.com)"
+USER_AGENT = "mv2-forecast-bot/0.3 (MV2 of Munim, Inc.; munimversion2@gmail.com)"
 VIX_URL = "https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv"
 TREASURY_URL = (
     "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/"
@@ -83,7 +84,28 @@ def forward_max_ratios(rows: list[dict], horizon: int) -> list[float]:
     return ratios
 
 
-def summarize_vix(rows: list[dict], horizon: int = 10, lookback_days: int = 1260) -> str:
+def summarize_vix(
+    rows: list[dict],
+    horizon: int = 10,
+    lookback_days: int = 1260,
+    window: tuple[date, date] | None = None,
+    today: date | None = None,
+) -> str:
+    """Recent VIX levels and a forward-max base rate.
+
+    When `window` (a question's (start, end) dates) is given, the horizon becomes the
+    number of trading days from the last data point to the end of that window, so the
+    base rate matches what the question asks instead of a fixed 10 trading days.
+    """
+    if len(rows) < 31:
+        return ""
+    ref_day = today or rows[-1]["date"]
+    window_info = None
+    if window is not None:
+        window_horizon = vix_window.trading_days_ahead(ref_day, window[1])
+        if 1 <= window_horizon <= len(rows) - 30:
+            horizon = window_horizon
+            window_info = window
     if len(rows) < horizon + 30:
         return ""
     last = rows[-1]
@@ -98,14 +120,29 @@ def summarize_vix(rows: list[dict], horizon: int = 10, lookback_days: int = 1260
         f"Last 252 trading days, close: min {min(closes_1y):.2f}, median {percentile(closes_1y, 50):.2f}, "
         f"max {max(closes_1y):.2f}.",
     ]
+    if window_info is not None:
+        w_start, w_end = window_info
+        w_len = vix_window.trading_days_inclusive(w_start, w_end)
+        to_start = vix_window.trading_days_ahead(ref_day, w_start)
+        lines.append(
+            f"Question window {w_start.isoformat()} to {w_end.isoformat()}: about {w_len} trading days long, "
+            f"{to_start} trading days from the last data point to the window start and {horizon} to its end."
+        )
     if ratios:
         implied = ", ".join(
             f"p{p} {last['close'] * percentile(ratios, p):.2f}" for p in PERCENTILES
         )
-        lines.append(
-            f"Base rate from the last {len(recent)} trading days: the highest intraday high over the next "
-            f"{horizon} trading days, as a multiple of the starting close, scaled to today's close: {implied}."
-        )
+        if window_info is not None:
+            lines.append(
+                f"Base rate from the last {len(recent)} trading days: the highest intraday high over the next "
+                f"{horizon} trading days (through the end of the question window), as a multiple of the starting "
+                f"close, scaled to today's close: {implied}."
+            )
+        else:
+            lines.append(
+                f"Base rate from the last {len(recent)} trading days: the highest intraday high over the next "
+                f"{horizon} trading days, as a multiple of the starting close, scaled to today's close: {implied}."
+            )
     return "\n".join(lines)
 
 
@@ -162,9 +199,11 @@ def _fetch(url: str, timeout: float = 20.0) -> str:
         return response.read().decode("utf-8-sig", errors="replace")
 
 
-def vix_context() -> str:
+def vix_context(question_text: str = "", today: date | None = None) -> str:
     try:
-        return summarize_vix(parse_vix_csv(_fetch(VIX_URL)))
+        ref_day = today or date.today()
+        window = vix_window.parse_window(question_text, ref_day)
+        return summarize_vix(parse_vix_csv(_fetch(VIX_URL)), window=window, today=ref_day)
     except Exception as error:
         logger.warning("VIX data unavailable: %s", error)
         return ""
@@ -194,7 +233,7 @@ def market_context(question_text: str) -> str:
     """Data sections relevant to the question text, or "" if none apply or the sources are down."""
     sections = []
     if VIX_PATTERN.search(question_text):
-        sections.append(vix_context())
+        sections.append(vix_context(question_text))
     if YIELD_PATTERN.search(question_text):
         sections.append(treasury_context())
     sections.append(earnings_context(question_text))
