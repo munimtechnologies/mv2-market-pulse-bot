@@ -7,7 +7,8 @@ the right horizon (the trading days up to the end of that window) instead of a
 fixed 10 trading days.
 
 Nothing here fetches anything or gives advice; it only reads dates from text and
-counts weekdays (a plain proxy for trading days; it does not know market holidays).
+counts trading days (weekdays minus the NYSE full-day holidays listed below for
+2026-2028; after 2028 only weekends are skipped).
 """
 
 from __future__ import annotations
@@ -42,6 +43,26 @@ _MD_RANGE = re.compile(
 _CONNECTIVE = re.compile(r"^\s*(?:and|to|through|until|[-–—])\s*$", re.IGNORECASE)
 
 MAX_SPAN_DAYS = 45
+
+# NYSE full-day closures (nyse.com/markets/hours-calendars, checked 2026-10-14). Cboe's U.S. options market closes
+# on the same days, so the VIX daily history has no row for them. Early-close days (e.g. the day after Thanksgiving)
+# are still trading days.
+NYSE_HOLIDAYS = frozenset({
+    # 2026
+    date(2026, 1, 1), date(2026, 1, 19), date(2026, 2, 16), date(2026, 4, 3), date(2026, 5, 25),
+    date(2026, 6, 19), date(2026, 7, 3), date(2026, 9, 7), date(2026, 11, 26), date(2026, 12, 25),
+    # 2027
+    date(2027, 1, 1), date(2027, 1, 18), date(2027, 2, 15), date(2027, 3, 26), date(2027, 5, 31),
+    date(2027, 6, 18), date(2027, 7, 5), date(2027, 9, 6), date(2027, 11, 25), date(2027, 12, 24),
+    # 2028 (January 1 is a Saturday, so there is no New Year's closure)
+    date(2028, 1, 17), date(2028, 2, 21), date(2028, 4, 14), date(2028, 5, 29), date(2028, 6, 19),
+    date(2028, 7, 4), date(2028, 9, 4), date(2028, 11, 23), date(2028, 12, 25),
+})
+
+
+def is_trading_day(day: date) -> bool:
+    """A weekday that is not a listed NYSE holiday."""
+    return day.weekday() < 5 and day not in NYSE_HOLIDAYS
 
 
 def _safe_date(year: int, month: int, day: int) -> date | None:
@@ -120,26 +141,26 @@ def parse_window(text: str, today: date) -> tuple[date, date] | None:
 
 
 def trading_days_ahead(today: date, target: date) -> int:
-    """Weekdays strictly after `today` up to and including `target` (0 if target <= today)."""
+    """Trading days strictly after `today` up to and including `target` (0 if target <= today)."""
     if target <= today:
         return 0
     count = 0
     day = today + timedelta(days=1)
     while day <= target:
-        if day.weekday() < 5:
+        if is_trading_day(day):
             count += 1
         day += timedelta(days=1)
     return count
 
 
 def trading_days_inclusive(start: date, end: date) -> int:
-    """Weekdays in [start, end] inclusive (0 if end < start)."""
+    """Trading days in [start, end] inclusive (0 if end < start)."""
     if end < start:
         return 0
     count = 0
     day = start
     while day <= end:
-        if day.weekday() < 5:
+        if is_trading_day(day):
             count += 1
         day += timedelta(days=1)
     return count

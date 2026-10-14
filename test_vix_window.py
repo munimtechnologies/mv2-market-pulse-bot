@@ -81,6 +81,24 @@ class TradingDaysTest(unittest.TestCase):
     def test_inclusive_empty_when_reversed(self):
         self.assertEqual(vw.trading_days_inclusive(date(2026, 10, 19), date(2026, 10, 13)), 0)
 
+    def test_ahead_skips_thanksgiving(self):
+        # Fri Nov 20 -> Fri Nov 27, 2026: Mon, Tue, Wed and the Friday half day; Thursday Nov 26 is closed.
+        self.assertEqual(vw.trading_days_ahead(date(2026, 11, 20), date(2026, 11, 27)), 4)
+
+    def test_inclusive_skips_christmas_and_new_year(self):
+        # Mon Dec 21, 2026 -> Fri Jan 1, 2027: 10 weekdays, minus Dec 25 and Jan 1.
+        self.assertEqual(vw.trading_days_inclusive(date(2026, 12, 21), date(2027, 1, 1)), 8)
+
+    def test_is_trading_day(self):
+        self.assertTrue(vw.is_trading_day(date(2026, 10, 12)))  # Columbus Day: NYSE is open
+        self.assertTrue(vw.is_trading_day(date(2026, 11, 27)))  # early close is still a trading day
+        self.assertFalse(vw.is_trading_day(date(2026, 7, 3)))  # Independence Day observed
+        self.assertFalse(vw.is_trading_day(date(2026, 10, 17)))  # Saturday
+
+    def test_holiday_list_is_sane(self):
+        self.assertTrue(all(d.weekday() < 5 for d in vw.NYSE_HOLIDAYS))
+        self.assertEqual([sum(d.year == y for d in vw.NYSE_HOLIDAYS) for y in (2026, 2027, 2028)], [10, 10, 9])
+
 
 if __name__ == "__main__":
     unittest.main()

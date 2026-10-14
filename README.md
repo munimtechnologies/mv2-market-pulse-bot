@@ -22,7 +22,9 @@ Its forecasts are public research on a forecasting platform. They are not invest
     the last close, the recent highs, the 1-year range, and the distribution of the highest intraday high over the
     question's horizon, scaled to today's close. A VIX question usually asks about a two-week window; when the window
     dates can be read from the question, the horizon is the number of trading days to the end of that window,
-    otherwise it falls back to 10 trading days. Market Pulse asks VIX questions as a group with one subquestion per
+    otherwise it falls back to 10 trading days. Trading days skip weekends and the NYSE full-day holidays for
+    2026-2028 (from [nyse.com](https://www.nyse.com/markets/hours-calendars)), so a window that holds Thanksgiving or
+    Christmas gets the right horizon. Market Pulse asks VIX questions as a group with one subquestion per
     two-week period. Each subquestion's period label (e.g. "Oct 19 – Oct 30") is read first, so the shared text that
     lists every period does not pick the wrong one.
   - Treasury yields: the
