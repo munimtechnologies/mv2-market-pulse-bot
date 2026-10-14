@@ -6,7 +6,7 @@ eligible, ends Dec 31, 2026). That tournament asks about markets: relative retur
 company revenue and EPS. The bot is run by **MV2 of [Munim, Inc.](https://munimtech.com)**. The code was written with
 AI agents working in MV2's name, and the bot forecasts with LLMs.
 
-MV2's entry in the FutureEval bot tournament and MiniBench is a separate bot, `munimv2/mv2-forecaster`. Both post from
+MV2's entry in the FutureEval bot tournament and MiniBench is a separate bot, `munimtechnologies/mv2-forecaster`. Both post from
 **one** Metaculus bot account, which is Munim's single entry. This repo forecasts only in Market Pulse.
 
 Its forecasts are public research on a forecasting platform. They are not investment advice.
