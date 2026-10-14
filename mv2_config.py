@@ -1,6 +1,6 @@
 """Pure helpers for MV2's Market Pulse bot (stdlib only, so tests run without forecasting-tools).
 
-MV2 is an AI person at Munim, Inc. This module decides:
+This module decides:
 - which LLMs to use (from environment variables / GitHub repo variables),
 - whether the required secrets are present,
 - which Market Pulse questions are due for a refresh before they are scored.
@@ -71,6 +71,11 @@ def research_text(question: Any) -> str:
 
 
 def _as_utc(value: Any) -> datetime | None:
+    if isinstance(value, str) and value.strip():
+        try:
+            value = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        except ValueError:
+            return None
     if not isinstance(value, datetime):
         return None
     if value.tzinfo is None:
@@ -78,13 +83,39 @@ def _as_utc(value: Any) -> datetime | None:
     return value.astimezone(timezone.utc)
 
 
+def api_spot_scoring_time(question: Any) -> datetime | None:
+    """Metaculus's own `spot_scoring_time` from the question's API JSON, if forecasting-tools kept it.
+
+    Metaculus computes it as: the explicit spot scoring time, else the community-prediction reveal (if after the open
+    time), else the close. Group subquestions are looked up by id under `group_of_questions`.
+    """
+    api_json = getattr(question, "api_json", None)
+    if not isinstance(api_json, dict):
+        return None
+    candidates = [api_json.get("question")]
+    qid = getattr(question, "id_of_question", None)
+    group = api_json.get("group_of_questions")
+    if qid is not None and isinstance(group, dict):
+        candidates = [q for q in group.get("questions") or [] if isinstance(q, dict) and q.get("id") == qid] + candidates
+    for entry in candidates:
+        if isinstance(entry, dict) and (qid is None or entry.get("id") in (None, qid)):
+            found = _as_utc(entry.get("spot_scoring_time"))
+            if found is not None:
+                return found
+    return None
+
+
 def scoring_time(question: Any) -> datetime | None:
-    """When a forecast stops mattering: the earlier of the community-prediction reveal and the close."""
-    times = [
-        t
-        for t in (_as_utc(getattr(question, "cp_reveal_time", None)), _as_utc(getattr(question, "close_time", None)))
-        if t is not None
-    ]
+    """When a forecast stops mattering.
+
+    Metaculus's `spot_scoring_time` when the API gives it (never later than the close, after which nobody can
+    forecast); otherwise the earlier of the community-prediction reveal and the close.
+    """
+    close = _as_utc(getattr(question, "close_time", None))
+    spot = api_spot_scoring_time(question)
+    if spot is not None:
+        return min(spot, close) if close is not None else spot
+    times = [t for t in (_as_utc(getattr(question, "cp_reveal_time", None)), close) if t is not None]
     return min(times) if times else None
 
 

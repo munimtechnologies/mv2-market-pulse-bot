@@ -78,6 +78,11 @@ class TreasuryTest(unittest.TestCase):
 
 
 class MarketContextTest(unittest.TestCase):
+    def setUp(self):
+        patcher = mock.patch.object(md.sec_filings, "earnings_context", return_value="")
+        self.earnings = patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_picks_sections_by_topic(self):
         with mock.patch.object(md, "vix_context", return_value="V"), mock.patch.object(
             md, "treasury_context", return_value="T"
@@ -91,6 +96,14 @@ class MarketContextTest(unittest.TestCase):
     def test_sources_down_gives_empty(self):
         with mock.patch.object(md, "vix_context", return_value=""):
             self.assertEqual(md.market_context("VIX peak"), "")
+
+    def test_earnings_section_is_added(self):
+        self.earnings.return_value = "E"
+        self.assertTrue(md.market_context("NVIDIA (NVDA) revenue?").endswith(":\nE"))
+
+    def test_earnings_error_is_soft(self):
+        self.earnings.side_effect = ValueError("bad json")
+        self.assertEqual(md.market_context("NVIDIA (NVDA) revenue?"), "")
 
 
 if __name__ == "__main__":

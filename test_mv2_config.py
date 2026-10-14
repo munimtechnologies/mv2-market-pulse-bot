@@ -6,12 +6,18 @@ import mv2_config as cfg
 NOW = datetime(2026, 11, 2, 12, 0, tzinfo=timezone.utc)
 
 
+def iso(dt):
+    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 class Q:
-    def __init__(self, close=None, reveal=None, last=None, broken=False):
+    def __init__(self, close=None, reveal=None, last=None, broken=False, api_json=None, qid=None):
         self.close_time = close
         self.cp_reveal_time = reveal
         self._last = last
         self._broken = broken
+        self.api_json = api_json
+        self.id_of_question = qid
 
     @property
     def timestamp_of_my_last_forecast(self):
@@ -77,6 +83,41 @@ class ResearchTextTest(unittest.TestCase):
         self.assertEqual(cfg.research_text(q), "VIX peak?\nCboe close")
 
 
+class ScoringTimeTest(unittest.TestCase):
+    def test_api_spot_scoring_time_wins(self):
+        spot = NOW + timedelta(days=2)
+        q = Q(close=NOW + timedelta(days=10), reveal=NOW + timedelta(days=1), qid=7,
+              api_json={"question": {"id": 7, "spot_scoring_time": iso(spot)}})
+        self.assertEqual(cfg.scoring_time(q), spot)
+
+    def test_api_spot_time_is_capped_at_close(self):
+        close = NOW + timedelta(days=1)
+        q = Q(close=close, qid=7, api_json={"question": {"id": 7, "spot_scoring_time": iso(NOW + timedelta(days=3))}})
+        self.assertEqual(cfg.scoring_time(q), close)
+
+    def test_group_subquestion_uses_its_own_entry(self):
+        spot = NOW + timedelta(hours=30)
+        api_json = {
+            "question": {"id": 1, "spot_scoring_time": iso(NOW + timedelta(days=9))},
+            "group_of_questions": {"questions": [
+                {"id": 2, "spot_scoring_time": iso(NOW + timedelta(days=5))},
+                {"id": 3, "spot_scoring_time": iso(spot)},
+            ]},
+        }
+        self.assertEqual(cfg.scoring_time(Q(qid=3, api_json=api_json)), spot)
+
+    def test_other_question_entry_is_ignored(self):
+        reveal = NOW + timedelta(days=1)
+        q = Q(close=NOW + timedelta(days=4), reveal=reveal, qid=5,
+              api_json={"question": {"id": 4, "spot_scoring_time": iso(NOW + timedelta(days=2))}})
+        self.assertEqual(cfg.scoring_time(q), reveal)
+
+    def test_bad_or_missing_api_time_falls_back(self):
+        reveal = NOW + timedelta(days=1)
+        for api_json in (None, {}, {"question": {"spot_scoring_time": None}}, {"question": {"spot_scoring_time": "soon"}}):
+            self.assertEqual(cfg.scoring_time(Q(close=NOW + timedelta(days=4), reveal=reveal, api_json=api_json)), reveal)
+
+
 class DueForRefreshTest(unittest.TestCase):
     def test_closing_soon_never_forecast_is_due(self):
         q = Q(close=NOW + timedelta(hours=5))
@@ -101,6 +142,11 @@ class DueForRefreshTest(unittest.TestCase):
     def test_reveal_before_close_counts(self):
         # Scored at the community-prediction reveal, which is inside the window even though close is not.
         q = Q(close=NOW + timedelta(days=10), reveal=NOW + timedelta(hours=3))
+        self.assertEqual(cfg.due_for_refresh([q], NOW), [q])
+
+    def test_api_spot_time_inside_window_counts(self):
+        q = Q(close=NOW + timedelta(days=10), reveal=NOW + timedelta(days=5), qid=9,
+              api_json={"question": {"id": 9, "spot_scoring_time": iso(NOW + timedelta(hours=4))}})
         self.assertEqual(cfg.due_for_refresh([q], NOW), [q])
 
     def test_naive_datetimes_are_treated_as_utc(self):

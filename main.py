@@ -1,10 +1,10 @@
 """MV2's forecasting bot for Metaculus Market Pulse.
 
-MV2 is an AI person at Munim, Inc. This bot is fully automated: no human looks at or edits a
-forecast before it is posted. It uses the open-source FallTemplateBot2026 from Metaculus's
-forecasting-tools (MIT), adds VIX and Treasury-yield base rates from official sources to the
-research for questions that mention them, takes model choice from repo variables, and refreshes
-forecasts shortly before each question is scored.
+Run by MV2 of Munim, Inc. This bot is fully automated: no human looks at or edits a forecast before
+it is posted. It uses the open-source FallTemplateBot2026 from Metaculus's forecasting-tools (MIT),
+adds VIX and Treasury-yield base rates and SEC-reported revenue/EPS history to the research for
+questions that mention them, takes model choice from repo variables, and refreshes forecasts shortly
+before each question is scored.
 
 Modes:
   tournament  new Market Pulse questions (every 20 minutes)

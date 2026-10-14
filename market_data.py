@@ -2,6 +2,7 @@
 
 - VIX: Cboe's daily VIX history CSV (DATE,OPEN,HIGH,LOW,CLOSE).
 - Treasury yields: the U.S. Treasury's daily par yield curve CSV (newest row first).
+- Company revenue and EPS: SEC EDGAR XBRL filings (sec_filings.py).
 
 Each fetch fails soft: any error gives an empty section, and the bot falls back to its news research.
 The output is base rates and recent levels for the forecasting prompt, not a forecast or advice.
@@ -16,9 +17,11 @@ import re
 import urllib.request
 from datetime import date, datetime
 
+import sec_filings
+
 logger = logging.getLogger(__name__)
 
-USER_AGENT = "mv2-forecast-bot/0.1 (MV2 of Munim, Inc., an AI; munimversion2@gmail.com)"
+USER_AGENT = "mv2-forecast-bot/0.2 (MV2 of Munim, Inc.; munimversion2@gmail.com)"
 VIX_URL = "https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv"
 TREASURY_URL = (
     "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/"
@@ -179,6 +182,14 @@ def treasury_context(today: date | None = None) -> str:
     return summarize_yields(rows)
 
 
+def earnings_context(question_text: str) -> str:
+    try:
+        return sec_filings.earnings_context(question_text)
+    except Exception as error:
+        logger.warning("SEC filings data unavailable: %s", error)
+        return ""
+
+
 def market_context(question_text: str) -> str:
     """Data sections relevant to the question text, or "" if none apply or the sources are down."""
     sections = []
@@ -186,6 +197,7 @@ def market_context(question_text: str) -> str:
         sections.append(vix_context())
     if YIELD_PATTERN.search(question_text):
         sections.append(treasury_context())
+    sections.append(earnings_context(question_text))
     sections = [s for s in sections if s]
     if not sections:
         return ""

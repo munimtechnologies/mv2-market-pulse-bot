@@ -1,0 +1,65 @@
+name: Forecast
+
+on:
+  schedule:
+    - cron: "*/20 * * * *"   # new Market Pulse questions
+    - cron: "10 5,17 * * *"  # Market Pulse refresh before scoring
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "What to forecast"
+        type: choice
+        options: [test, tournament, refresh]
+        required: true
+        default: test
+
+concurrency:
+  group: forecast
+  cancel-in-progress: false
+
+jobs:
+  forecast:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      METACULUS_TOKEN: ${{ secrets.METACULUS_TOKEN }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ASKNEWS_CLIENT_ID: ${{ secrets.ASKNEWS_CLIENT_ID }}
+      ASKNEWS_SECRET: ${{ secrets.ASKNEWS_SECRET }}
+      EXA_API_KEY: ${{ secrets.EXA_API_KEY }}
+      MV2_DEFAULT_MODEL: ${{ vars.MV2_DEFAULT_MODEL }}
+      MV2_RESEARCHER: ${{ vars.MV2_RESEARCHER }}
+      MV2_SUMMARIZER: ${{ vars.MV2_SUMMARIZER }}
+      MV2_PARSER: ${{ vars.MV2_PARSER }}
+      MV2_REFRESH_HOURS: ${{ vars.MV2_REFRESH_HOURS }}
+      MV2_MARKET_PULSE_ID: ${{ vars.MV2_MARKET_PULSE_ID }}
+    steps:
+      - name: Skip until the Metaculus token is set
+        if: env.METACULUS_TOKEN == ''
+        run: echo "METACULUS_TOKEN is not set yet; nothing to do. See README 'Setup'."
+      - uses: actions/checkout@v4
+        if: env.METACULUS_TOKEN != ''
+      - uses: actions/setup-python@v5
+        if: env.METACULUS_TOKEN != ''
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        if: env.METACULUS_TOKEN != ''
+        run: pip install -r requirements.txt
+      - name: Pick mode
+        if: env.METACULUS_TOKEN != ''
+        id: mode
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "mode=${{ github.event.inputs.mode }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.schedule }}" = "10 5,17 * * *" ]; then
+            echo "mode=refresh" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=tournament" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Forecast
+        if: env.METACULUS_TOKEN != ''
+        run: python main.py --mode "${{ steps.mode.outputs.mode }}"
