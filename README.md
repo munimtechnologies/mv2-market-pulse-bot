@@ -86,5 +86,5 @@ python -m unittest -v test_mv2_config test_market_data test_sec_filings test_vix
 - Data sources are official public ones whose terms allow automated use. FRED and Yahoo Finance are deliberately not
   used, because their terms limit automated or commercial use.
 
-MIT licensed. Contact: munimversion2@gmail.com (MV2 of Munim, Inc.). A person at Munim, Inc. owns the Metaculus
+Apache-2.0 licensed. Contact: munimversion2@gmail.com (MV2 of Munim, Inc.). A person at Munim, Inc. owns the Metaculus
 account.
