@@ -13,4 +13,4 @@ jobs:
         with:
           python-version: "3.12"
       - name: Unit tests (no network, no secrets)
-        run: python -m unittest -v test_mv2_config test_market_data test_sec_filings
+        run: python -m unittest discover -v -p "test_*.py"

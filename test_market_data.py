@@ -77,6 +77,39 @@ class VixTest(unittest.TestCase):
         self.assertIn("Question window 2026-04-20 to 2026-05-01", text)
 
 
+class PairContextTest(unittest.TestCase):
+    FILES = {
+        "VXN": "DATE,OPEN,HIGH,LOW,CLOSE\n10/13/2026,1,1,1,30.0\n",
+        "VIX": "DATE,OPEN,HIGH,LOW,CLOSE\n10/13/2026,1,1,1,40.0\n",
+        "GVZ": "DATE,GVZ\n10/13/2026,22.09\n",
+    }
+
+    def fake_fetch(self, url):
+        return self.FILES[url.rsplit("/", 1)[1].split("_")[0]]
+
+    def test_needs_two_legs(self):
+        with mock.patch.object(md, "_fetch") as fetch:
+            self.assertEqual(md.pair_context("Will gold rise?"), "")
+            fetch.assert_not_called()
+
+    def test_fetches_each_leg_and_reads_window(self):
+        with mock.patch.object(md, "_fetch", side_effect=self.fake_fetch):
+            text = md.pair_context("Oct 19 – Oct 30\nNQ − ES, percentage points", today=date(2026, 10, 14))
+        self.assertIn("Nasdaq-100 (VXN) 30.00", text)
+        self.assertIn("S&P 500 (VIX) 40.00", text)
+        self.assertIn("Question window 2026-10-19 to 2026-10-30: 10 trading days.", text)
+
+    def test_single_column_file(self):
+        with mock.patch.object(md, "_fetch", side_effect=self.fake_fetch):
+            text = md.pair_context("Gold − ES", today=date(2026, 10, 14))
+        self.assertIn("Gold (GVZ) 22.09", text)
+        self.assertIn("using 10 trading days", text)
+
+    def test_source_down_is_soft(self):
+        with mock.patch.object(md, "_fetch", side_effect=OSError("down")):
+            self.assertEqual(md.pair_context("NQ − ES"), "")
+
+
 class TreasuryTest(unittest.TestCase):
     def test_parse_sorts_and_keeps_blanks_as_none(self):
         rows = md.parse_treasury_csv(treasury_csv(3))
@@ -112,6 +145,10 @@ class MarketContextTest(unittest.TestCase):
             both = md.market_context("Will the 10-year Treasury yield rise while the VIX falls?")
             self.assertTrue(both.endswith("V\n\nT"))
             self.assertEqual(md.market_context("Will NVDA beat AMD this quarter?"), "")
+
+    def test_pair_section_is_added(self):
+        with mock.patch.object(md, "pair_context", return_value="P"):
+            self.assertTrue(md.market_context("NQ − ES").endswith(":\nP"))
 
     def test_sources_down_gives_empty(self):
         with mock.patch.object(md, "vix_context", return_value=""):

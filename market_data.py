@@ -1,6 +1,7 @@
 """Market context for Market Pulse questions, from official free sources (stdlib only).
 
 - VIX: Cboe's daily VIX history CSV (DATE,OPEN,HIGH,LOW,CLOSE).
+- Pair questions (e.g. "NQ − ES", "Gold − ES"): Cboe's implied volatility indices for each leg (pair_vol.py).
 - Treasury yields: the U.S. Treasury's daily par yield curve CSV (newest row first).
 - Company revenue and EPS: SEC EDGAR XBRL filings (sec_filings.py).
 
@@ -17,13 +18,15 @@ import re
 import urllib.request
 from datetime import date, datetime
 
+import pair_vol
 import sec_filings
 import vix_window
 
 logger = logging.getLogger(__name__)
 
-USER_AGENT = "mv2-forecast-bot/0.3 (MV2 of Munim, Inc.; munimversion2@gmail.com)"
+USER_AGENT = "mv2-forecast-bot/0.4 (MV2 of Munim, Inc.; munimversion2@gmail.com)"
 VIX_URL = "https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv"
+CBOE_URL = "https://cdn-api.cboe.com/api/global/us_indices/daily_prices/{symbol}_History.csv"
 TREASURY_URL = (
     "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/"
     "{year}/all?type=daily_treasury_yield_curve&field_tdr_date_value={year}&page&_format=csv"
@@ -209,6 +212,23 @@ def vix_context(question_text: str = "", today: date | None = None) -> str:
         return ""
 
 
+def pair_context(question_text: str = "", today: date | None = None) -> str:
+    """Implied-vol section for a question that names two legs (the first two mentioned), else ""."""
+    legs = pair_vol.find_legs(question_text)[:2]
+    if len(legs) < 2:
+        return ""
+    try:
+        series = {}
+        for leg in legs:
+            symbol = pair_vol.LEGS[leg][0]
+            series[leg] = pair_vol.parse_cboe_csv(_fetch(CBOE_URL.format(symbol=symbol)), symbol)
+        window = vix_window.parse_window(question_text, today or date.today())
+        return pair_vol.summarize_pair(legs, series, pair_vol.window_days(window), window=window)
+    except Exception as error:
+        logger.warning("Implied volatility data unavailable: %s", error)
+        return ""
+
+
 def treasury_context(today: date | None = None) -> str:
     year = (today or date.today()).year
     rows: list[dict] = []
@@ -234,6 +254,7 @@ def market_context(question_text: str) -> str:
     sections = []
     if VIX_PATTERN.search(question_text):
         sections.append(vix_context(question_text))
+    sections.append(pair_context(question_text))
     if YIELD_PATTERN.search(question_text):
         sections.append(treasury_context())
     sections.append(earnings_context(question_text))
