@@ -3,12 +3,15 @@
 This module decides:
 - which LLMs to use (from environment variables / GitHub repo variables),
 - whether the required secrets are present,
-- which Market Pulse questions are due for a refresh before they are scored.
+- which Market Pulse questions are due for a refresh before they are scored,
+- how to make a forecast comment link-free before it is posted (strip_links).
 """
 
 from __future__ import annotations
 
 import os
+import re
+import urllib.parse
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable, Mapping
 
@@ -74,6 +77,52 @@ def research_text(question: Any) -> str:
     names = ("group_question_option", "question_text", "background_info", "resolution_criteria", "fine_print")
     parts = (getattr(question, name, None) for name in names)
     return "\n".join(p for p in parts if isinstance(p, str) and p.strip())
+
+
+# --- Link-free comments -------------------------------------------------------------------------------------------
+# Metaculus's spam filter has deactivated an account over links in comments. The research step cites source URLs,
+# so every comment is passed through strip_links before it is posted: a link keeps its text, and a bare URL or
+# domain becomes the site's short name ("https://www.reuters.com/x" -> "reuters").
+
+_MD_LINK = re.compile(r"!?\[([^\]]*)\]\((?:[^()\s]|\([^()\s]*\))*(?:\s+\"[^\"]*\")?\)")
+_ANGLE_URL = re.compile(r"<((?:https?|ftp)://[^>\s]+)>", re.IGNORECASE)
+_BARE_URL = re.compile(r"\b(?:https?|ftp)://[^\s<>()\[\]]+|\bwww\.[^\s<>()\[\]]+", re.IGNORECASE)
+_DOMAIN = re.compile(
+    r"\b(?:[a-z0-9-]+\.)*[a-z0-9-]+\.(?:com|org|net|gov|edu|io|ai|info|news|biz|uk|eu|app|dev)\b(?:/[^\s<>()\[\]]*)?",
+    re.IGNORECASE,
+)
+_TRAILING = ".,;:!?'\""
+_SECOND_LEVEL = ("co", "com", "org", "gov", "ac", "net", "edu")
+
+
+def site_name(url: str) -> str:
+    """Short name of a URL's site: "https://www.sec.gov/x" -> "sec", "bbc.co.uk" -> "bbc"."""
+    try:
+        host = urllib.parse.urlsplit(url if "://" in url else "http://" + url).hostname or ""
+    except ValueError:
+        return ""
+    labels = [part for part in host.split(".") if part]
+    if labels and labels[0] == "www":
+        labels = labels[1:]
+    if len(labels) >= 3 and labels[-2] in _SECOND_LEVEL:
+        return labels[-3]
+    if len(labels) >= 2:
+        return labels[-2]
+    return labels[0] if labels else ""
+
+
+def _replace_url(match: re.Match) -> str:
+    raw = match.group(0)
+    core = raw.rstrip(_TRAILING)
+    return site_name(core) + raw[len(core):]
+
+
+def strip_links(text: str) -> str:
+    """The same markdown with no links, URLs or linkable domain names left in it."""
+    text = _MD_LINK.sub(lambda m: m.group(1), text)
+    text = _ANGLE_URL.sub(lambda m: site_name(m.group(1)), text)
+    text = _BARE_URL.sub(_replace_url, text)
+    return _DOMAIN.sub(_replace_url, text)
 
 
 def _as_utc(value: Any) -> datetime | None:

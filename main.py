@@ -2,9 +2,9 @@
 
 Run by MV2 of Munim, Inc. This bot is fully automated: no human looks at or edits a forecast before
 it is posted. It uses the open-source FallTemplateBot2026 from Metaculus's forecasting-tools (MIT),
-adds VIX and Treasury-yield base rates and SEC-reported revenue/EPS history to the research for
-questions that mention them, takes model choice from repo variables, and refreshes forecasts shortly
-before each question is scored.
+adds VIX, implied-volatility and Treasury-yield base rates and SEC-reported revenue/EPS history to the
+research for questions that mention them, takes model choice from environment variables, refreshes
+forecasts shortly before each question is scored, and posts its reasoning with every link removed.
 
 Modes:
   tournament  new Market Pulse questions (every 20 minutes)
@@ -42,6 +42,10 @@ def build_bot(publish: bool):
             research = await super().run_research(question)
             context = await asyncio.to_thread(market_data.market_context, mv2_config.research_text(question))
             return f"{context}\n\n{research}" if context else research
+
+        def _create_unified_explanation(self, *args, **kwargs):
+            # The explanation is posted as a Metaculus comment; links in comments trip its spam filter.
+            return mv2_config.strip_links(super()._create_unified_explanation(*args, **kwargs))
 
     llms = None
     overrides = mv2_config.llm_overrides()
