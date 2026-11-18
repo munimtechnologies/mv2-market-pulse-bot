@@ -4,7 +4,8 @@ This module decides:
 - which LLMs to use (from environment variables / GitHub repo variables),
 - whether the required secrets are present,
 - which Market Pulse questions are due for a refresh before they are scored,
-- how to make a forecast comment link-free before it is posted (strip_links).
+- how to make a forecast comment link-free before it is posted (strip_links),
+- what one run's summary line says, including why forecasts failed (run_summary, error_digest).
 """
 
 from __future__ import annotations
@@ -31,7 +32,7 @@ LLM_KEY_VARS = (
     "METACULUS_TOKEN",
 )
 
-DEFAULT_MARKET_PULSE_ID = "market-pulse-26q4"  # https://www.metaculus.com/tournament/market-pulse-26q4/
+DEFAULT_MARKET_PULSE_ID = "market-pulse-26q4"  # https://www.metaculus.com/tournament/market-pulse-26q4/ (id 33131)
 
 
 def llm_overrides(env: Mapping[str, str] | None = None) -> dict[str, str]:
@@ -124,6 +125,62 @@ def strip_links(text: str) -> str:
     text = _BARE_URL.sub(_replace_url, text)
     return _DOMAIN.sub(_replace_url, text)
 
+
+# --- Run summary: say why forecasts failed ------------------------------------------------------------------------
+# A scheduled run used to print only "0 forecasts, N errors", which says nothing about the cause. The summary line now
+# names the root error of each failed question (type and a short message), with anything that looks like a secret
+# masked, so the run log shows what to fix without exposing a token.
+
+_KEYVAL = re.compile(r"(?i)(token|key|secret|authorization|bearer|password)([\"'\s:=]+)[^\s\"',}]+")
+_SECRETISH = re.compile(r"[A-Za-z0-9_]{32,}")
+
+
+def redact(text: str) -> str:
+    """The text with token-like values masked: "api_key=abc" -> "api_key=***", long opaque strings -> "***"."""
+    text = _KEYVAL.sub(lambda m: m.group(1) + m.group(2) + "***", text)
+    return _SECRETISH.sub("***", text)
+
+
+def root_cause(exc: BaseException) -> BaseException:
+    """The innermost error: follows an exception group's first member and `raise ... from` causes (at most 10 steps)."""
+    for _ in range(10):
+        members = getattr(exc, "exceptions", None)
+        if isinstance(members, (list, tuple)) and members and isinstance(members[0], BaseException):
+            exc = members[0]
+        elif exc.__cause__ is not None:
+            exc = exc.__cause__
+        else:
+            break
+    return exc
+
+
+def error_digest(reports: Iterable[Any], limit: int = 3, width: int = 160) -> str:
+    """'TypeA xN: first message; TypeB xM: ...' over the root causes of the failed reports, most common first."""
+    counts: dict[str, int] = {}
+    first: dict[str, str] = {}
+    for report in reports:
+        if not isinstance(report, BaseException):
+            continue
+        root = root_cause(report)
+        name = type(root).__name__
+        counts[name] = counts.get(name, 0) + 1
+        if name not in first:
+            first[name] = redact(" ".join(str(root).split()))[:width]
+    ranked = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:limit]
+    return "; ".join(f"{name} x{n}: {first[name]}" if first[name] else f"{name} x{n}" for name, n in ranked)
+
+
+def run_summary(mode: str, reports: list[Any], publish: bool, research_fallbacks: int = 0) -> str:
+    """The one line a run appends to its log. The first part is unchanged from earlier versions."""
+    errors = [r for r in reports if isinstance(r, BaseException)]
+    line = f"MV2 forecast run ({mode}): {len(reports) - len(errors)} forecasts, {len(errors)} errors, publish={publish}"
+    if research_fallbacks:
+        line += f" | research_fallbacks={research_fallbacks}"
+    digest = error_digest(errors)
+    return f"{line} | {digest}" if digest else line
+
+
+# --- Refresh before scoring ---------------------------------------------------------------------------------------
 
 def _as_utc(value: Any) -> datetime | None:
     if isinstance(value, str) and value.strip():

@@ -6,6 +6,10 @@ adds VIX, implied-volatility and Treasury-yield base rates and SEC-reported reve
 research for questions that mention them, takes model choice from environment variables, refreshes
 forecasts shortly before each question is scored, and posts its reasoning with every link removed.
 
+If the news-research step fails (for example, no search-capable model is reachable), the bot still
+forecasts from the official market data above instead of failing the whole question. Each run ends
+with one summary line that names the root cause of any failed question, with secrets masked.
+
 Modes:
   tournament  new Market Pulse questions (every 20 minutes)
   refresh     Market Pulse questions scored within the next MV2_REFRESH_HOURS (twice a day)
@@ -33,15 +37,31 @@ except ImportError:
 
 logger = logging.getLogger("mv2")
 
+NO_NEWS_NOTE = "No news research was available for this run; the forecast rests on the market data above, if any."
+
 
 def build_bot(publish: bool):
     from forecasting_tools import FallTemplateBot2026, GeneralLlm
 
     class MarketPulseBot(FallTemplateBot2026):
+        mv2_research_fallbacks = 0
+
         async def run_research(self, question):
-            research = await super().run_research(question)
+            try:
+                research = await super().run_research(question)
+            except Exception as exc:  # a failed search must not sink the forecast
+                type(self).mv2_research_fallbacks += 1
+                cause = mv2_config.root_cause(exc)
+                logger.warning(
+                    "News research failed (%s: %s); forecasting on market data only",
+                    type(cause).__name__,
+                    mv2_config.redact(" ".join(str(cause).split()))[:200],
+                )
+                research = ""
             context = await asyncio.to_thread(market_data.market_context, mv2_config.research_text(question))
-            return f"{context}\n\n{research}" if context else research
+            if context and research:
+                return f"{context}\n\n{research}"
+            return context or research or NO_NEWS_NOTE
 
         def _create_unified_explanation(self, *args, **kwargs):
             # The explanation is posted as a Metaculus comment; links in comments trip its spam filter.
@@ -58,7 +78,7 @@ def build_bot(publish: bool):
             )
         logger.info("Model overrides: %s", overrides)
 
-    return MarketPulseBot(
+    bot = MarketPulseBot(
         research_reports_per_question=1,
         predictions_per_research_report=5,
         use_research_summary_to_forecast=False,
@@ -68,6 +88,7 @@ def build_bot(publish: bool):
         extra_metadata_in_explanation=True,
         llms=llms,
     )
+    return bot, MarketPulseBot
 
 
 def run(mode: str, publish: bool) -> int:
@@ -78,7 +99,7 @@ def run(mode: str, publish: bool) -> int:
         print(f"Not forecasting: missing {', '.join(missing)}. See README 'Setup'.")
         return 0
 
-    bot = build_bot(publish)
+    bot, bot_cls = build_bot(publish)
     tournament = mv2_config.market_pulse_id(client_cls=MetaculusClient)
     reports = []
 
@@ -99,8 +120,7 @@ def run(mode: str, publish: bool) -> int:
 
     if reports:
         bot.log_report_summary(reports, raise_errors=False)
-    errors = sum(1 for r in reports if isinstance(r, BaseException))
-    print(f"MV2 forecast run ({mode}): {len(reports) - errors} forecasts, {errors} errors, publish={publish}")
+    print(mv2_config.run_summary(mode, reports, publish, research_fallbacks=bot_cls.mv2_research_fallbacks))
     return 0
 
 

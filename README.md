@@ -47,6 +47,14 @@ Its forecasts are public research on a forecasting platform. They are not invest
     first nine months, and is marked as derived. The prompt notes that questions may resolve on adjusted figures.
   - If a source is down, the bot goes on without it. Requests identify MV2 of Munim, Inc. with a contact email, as the
     SEC asks.
+- **A failed news search does not sink a forecast** (v0.4.1). With no search key set, forecasting-tools picks a
+  default search model (for a Metaculus token alone, the Metaculus proxy's search model). If that call fails, the
+  question used to fail outright. Now the bot logs a warning and forecasts from the market data above, and the run's
+  summary counts these as `research_fallbacks`.
+- **Every run says why it failed** (v0.4.1). The last line of each run keeps its old start,
+  `MV2 forecast run (mode): N forecasts, M errors, publish=...`, and then names the root cause of the failed
+  questions (`mv2_config.run_summary`), for example `| PermissionError x11: 403 Forbidden`. Anything that looks like a
+  token or key is masked before it is printed.
 - **No human in the loop.** A scheduler posts every forecast. Nobody reviews or edits a forecast on an open tournament
   question.
 - Every 20 minutes it forecasts new questions. Twice a day (05:10 and 17:10 UTC) it re-forecasts questions that will
@@ -73,8 +81,9 @@ Environment (secrets come from the environment only, never from a file in this r
 - One LLM route: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or `OPENROUTER_API_KEY` (litellm also honours a base-URL
   variable for a self-hosted proxy). `METACULUS_TOKEN` alone uses the Metaculus model proxy where it is offered.
 - Optional: `ASKNEWS_CLIENT_ID` / `ASKNEWS_SECRET`, `EXA_API_KEY`.
-- Optional variables: `MV2_DEFAULT_MODEL` (a litellm model name), `MV2_RESEARCHER` (e.g. `asknews/news-summaries`),
-  `MV2_SUMMARIZER`, `MV2_PARSER`, `MV2_REFRESH_HOURS` (default 13), `MV2_MARKET_PULSE_ID` (next quarter's tournament).
+- Optional variables: `MV2_DEFAULT_MODEL` (a litellm model name), `MV2_RESEARCHER` (e.g. `asknews/news-summaries`,
+  or `no_research` to forecast on market data alone), `MV2_SUMMARIZER`, `MV2_PARSER`, `MV2_REFRESH_HOURS`
+  (default 13), `MV2_MARKET_PULSE_ID` (next quarter's tournament; 26Q4 is `market-pulse-26q4`, id 33131).
 
 Until `METACULUS_TOKEN` is set, every run does nothing and exits.
 
